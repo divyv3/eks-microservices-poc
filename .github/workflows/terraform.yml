@@ -28,11 +28,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Check GitHub context
-        run: |
-          echo "Repository: $GITHUB_REPOSITORY"
-          echo "Ref: $GITHUB_REF"
-          echo "Event: $GITHUB_EVENT_NAME"
+      - name: Debug OIDC claims
+        uses: github/actions-oidc-debugger@main
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
