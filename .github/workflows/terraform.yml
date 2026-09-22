@@ -1,15 +1,11 @@
-name: Terraform1
+
+name: Terraform Infrastructure
 
 on:
   pull_request:
-    paths:
-      - "terraform/**"
-
   push:
     branches:
       - master
-    paths:
-      - "terraform/**"
 
 permissions:
   id-token: write
@@ -28,12 +24,12 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
-     
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::349631302128:role/github-actions-terraform-role
-          aws-region: us-east-1
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Verify AWS identity
         run: aws sts get-caller-identity
@@ -52,6 +48,7 @@ jobs:
 
       - name: Terraform Plan
         run: terraform plan
+
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: terraform apply -auto-approve
