@@ -1,0 +1,101 @@
+
+name: Deploy to EKS
+
+on:
+  workflow_run:
+    workflows:
+      - Build and Push Images
+    types:
+      - completed
+    branches:
+      - master
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  deploy:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+
+    # Only deploy when build-and-push completed successfully
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Get EKS cluster name
+        id: cluster
+        working-directory: terraform
+        run: |
+          echo "cluster_name=$(terraform output -raw cluster_name)" >> "$GITHUB_OUTPUT"
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ vars.AWS_REGION }} \
+            --name ${{ steps.cluster.outputs.cluster_name }}
+
+      - name: Verify Kubernetes access
+        run: |
+          kubectl get nodes
+
+      - name: Deploy user-service
+        run: |
+          helm upgrade --install user-service ./helm/user-service \
+            --set image.repository=${{ steps.login-ecr.outputs.registry }}/user-service \
+            --set image.tag=${{ github.event.workflow_run.head_sha }}
+
+      - name: Deploy order-service
+        run: |
+          helm upgrade --install order-service ./helm/order-service \
+            --set image.repository=${{ steps.login-ecr.outputs.registry }}/order-service \
+            --set image.tag=${{ github.event.workflow_run.head_sha }}
+
+      - name: Deploy payment-service
+        run: |
+          helm upgrade --install payment-service ./helm/payment-service \
+            --set image.repository=${{ steps.login-ecr.outputs.registry }}/payment-service \
+            --set image.tag=${{ github.event.workflow_run.head_sha }}
+
+      - name: Verify deployments
+        run: |
+          kubectl get deployments
+          kubectl get pods
+          kubectl get services
+
+      - name: Wait for user-service rollout
+        run: |
+          kubectl rollout status deployment/user-service --timeout=180s
+
+      - name: Wait for order-service rollout
+        run: |
+          kubectl rollout status deployment/order-service --timeout=180s
+
+      - name: Wait for payment-service rollout
+        run: |
+          kubectl rollout status deployment/payment-service --timeout=180s
+
